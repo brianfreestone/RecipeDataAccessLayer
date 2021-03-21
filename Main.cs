@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Text;
@@ -67,6 +68,7 @@ namespace RecipeLibrary
                 public string first_name { get; set; }
                 public string last_name { get; set; }
                 public DateTime created { get; set; }
+                public bool accepted { get; set; }
 
                 // used for administrator functions
                 public bool is_admin { get; set; }
@@ -112,6 +114,10 @@ namespace RecipeLibrary
 
             }
 
+            /// <summary>
+            /// Change password method
+            /// </summary>
+            /// <param name="user">accepts user as argument</param>
             public static void ChangeUserPassword(User user)
             {
                 int password_id = 0;
@@ -134,6 +140,14 @@ namespace RecipeLibrary
                 }
             }
 
+            /// <summary>
+            /// Check to see if the password has already been used
+            /// This application requires that a previous password
+            /// may not be used as an updated password
+            /// </summary>
+            /// <param name="passwordHash">the hashed password</param>
+            /// <param name="user_id">the id of the user</param>
+            /// <returns></returns>
             public static bool PasswordExists(string passwordHash, int user_id)
             {
 
@@ -165,7 +179,15 @@ namespace RecipeLibrary
 
             }
 
-            public static bool ExistingPasswordMatches(int user_id, string passwordHash) 
+            /// <summary>
+            /// The method that logs the user into the website
+            /// This checks the password that the user entered 
+            /// with the password stored in the database
+            /// </summary>
+            /// <param name="user_id"></param>
+            /// <param name="passwordHash"></param>
+            /// <returns></returns>
+            public static bool ExistingPasswordMatches(int user_id, string passwordHash)
             {
                 bool match = false;
                 using (SqlConnection con = new SqlConnection(connString))
@@ -181,7 +203,7 @@ namespace RecipeLibrary
 
                     con.Open();
 
-                    match =(cmd.ExecuteScalar().ToString() != null ? true : false);
+                    match = (cmd.ExecuteScalar().ToString() != null ? true : false);
                 }
 
                 return match;
@@ -397,12 +419,12 @@ namespace RecipeLibrary
                 return userID;
             }
 
-            public static List<User> LiveSearchUsers(string searchVal)
+            public static List<User> LiveSearchTenUsers(string searchVal)
             {
 
                 List<User> usernames = new List<User>();
 
-                cmdText = "SELECT user_id, username, first_name, last_name FROM users WHERE first_name LIKE @searchVal + '%'";
+                cmdText = "SELECT TOP 10 user_id, username, first_name, last_name FROM users WHERE first_name LIKE @searchVal + '%'";
 
                 using (SqlConnection con = new SqlConnection(connString))
                 {
@@ -716,23 +738,50 @@ namespace RecipeLibrary
 
             public static List<Recipe> GetAllRecipes()
             {
-                // TODO Get list of all recipes
                 List<Recipe> listRecipes = new List<Recipe>();
                 return listRecipes;
             }
 
             public static Recipe GetRecipeByRecipeID(int recipeID)
             {
-                // TODO Get recipe by recipe ID
                 Recipe recipe = new Recipe();
                 return recipe;
             }
 
-            public static List<Recipe> GetFriendsRecipesByUserID(int userID, List<int> friendIDs)
+            public static List<Recipe> GetFriendsRecipesByUserID(int pageNumber, int pageSize, int userID)
             {
-                // TODO Get list of all recipes of friends of user
-                List<Recipe> listRecipes = new List<Recipe>();
-                return listRecipes;
+
+                List<Recipe> dictRecipes = new List<Recipe>();
+
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand("spGetFriendsRecipes", con);
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.AddWithValue("@PageNumber", pageNumber);
+                    cmd.Parameters.AddWithValue("@PageSize", pageSize);
+                    cmd.Parameters.AddWithValue("@UserID", userID);
+
+                    con.Open();
+                    SqlDataReader rdr = cmd.ExecuteReader();
+
+                    while (rdr.Read())
+                    {
+
+                        Recipe recipe = new Recipe()
+                        {
+                            recipe_id = Convert.ToInt32(rdr["recipe_id"]),
+                            name = rdr["name"].ToString(),
+                            created = Convert.ToDateTime(rdr["created"]),
+                            description = rdr["description"].ToString(),
+                            user_id = Convert.ToInt32(rdr["user_id"])
+                        };
+
+                        dictRecipes.Add( recipe);
+                    }
+
+                }
+                return dictRecipes;
             }
         }
 
@@ -753,6 +802,39 @@ namespace RecipeLibrary
                 Pending,
                 Accepted
             }
+
+            internal static List<int> GetFriendIDs(int userID)
+            {
+
+                List<int> friendIDs = new List<int>();
+
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    cmdText = "SELECT primary_user_id " +
+                                  "FROM(SELECT friends.primary_user_id " +
+                                  "FROM users INNER JOIN " +
+                                  "friends ON users.user_id = friends.primary_user_id " +
+                                  "WHERE(friends.secondary_user_id = @user_id) " +
+                                  "UNION " +
+                                  "SELECT friends_1.secondary_user_id " +
+                                  "FROM users AS users_1 INNER JOIN " +
+                                  "friends AS friends_1 ON users_1.user_id = friends_1.secondary_user_id " +
+                                  "WHERE(friends_1.primary_user_id = @user_id)) ";
+
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@user_id", userID);
+
+                    con.Open();
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    while (rdr.Read())
+                    {
+                        friendIDs.Add(Convert.ToInt32(rdr["primary_user_id"]));
+                    }
+                }
+                return friendIDs;
+            }
+
+
 
             public static void NewFriendRequest(Friend newRequest)
             {
@@ -819,9 +901,29 @@ namespace RecipeLibrary
                 return newState;
             }
 
+            public static int GetFriendCount(int user_id)
+            {
+                int friendCount = 0;
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    cmdText = "SELECT count (*) as total FROM friends WHERE ((primary_user_id = @user_id AND accepted = 1) OR (secondary_user_id = @user_id AND accepted = 1))";
+
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@user_id", user_id);
+
+                    con.Open();
+
+                    friendCount = Convert.ToInt32(cmd.ExecuteScalar());
+                }
+
+                return friendCount;
+            }
+
+
+
             public static int GetFriendRequestCount(int viewing_id)
             {
-                int returnID = 0;
+                int requestCount = 0;
 
                 using (SqlConnection con = new SqlConnection(connString))
                 {
@@ -832,10 +934,122 @@ namespace RecipeLibrary
 
                     con.Open();
 
-                    returnID = Convert.ToInt32(cmd.ExecuteScalar());
+                    requestCount = Convert.ToInt32(cmd.ExecuteScalar());
                 }
 
-                return returnID;
+                return requestCount;
+            }
+
+            public static Dictionary<int, UserLayer.User> GetFriends(int pageNumber, int pageSize, int userID)
+            {
+                Dictionary<int, UserLayer.User> dictFriends = new Dictionary<int, UserLayer.User>();
+
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand("spGetFriends", con);
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.AddWithValue("@PageNumber", pageNumber);
+                    cmd.Parameters.AddWithValue("@PageSize", pageSize);
+                    cmd.Parameters.AddWithValue("@UserID", userID);
+
+                    con.Open();
+                    SqlDataReader rdr = cmd.ExecuteReader();
+
+                    while (rdr.Read())
+                    {
+                        // get primary user info
+                        UserLayer.User user = new UserLayer.User()
+                        {
+                            accepted = Convert.ToBoolean(rdr["accepted"]),
+                            user_id = Convert.ToInt32(rdr["primaryUserID"]),
+                            username = rdr["primaryUsername"].ToString(),
+                            first_name = rdr["primaryUserFirstName"].ToString(),
+                            last_name = rdr["primaryUserLastName"].ToString()
+                        };
+
+
+                        if (!dictFriends.ContainsKey((int)user.user_id))
+                        {
+                            dictFriends.Add((int)user.user_id, user);
+                        }
+
+                        // get secondary user info
+                        UserLayer.User user2 = new UserLayer.User()
+                        {
+                            accepted = Convert.ToBoolean(rdr["accepted"]),
+                            user_id = Convert.ToInt32(rdr["secondaryUserID"]),
+                            username = rdr["secondaryUsername"].ToString(),
+                            first_name = rdr["secondaryUserFirstName"].ToString(),
+                            last_name = rdr["secondaryUserLastName"].ToString()
+                        };
+
+                        if (!dictFriends.ContainsKey((int)user2.user_id))
+                        {
+                            dictFriends.Add((int)user2.user_id, user2);
+                        }
+                    }
+                }
+
+                return dictFriends;
+                //// get friends where primary user id = userid
+                //using (SqlConnection con = new SqlConnection(connString))
+                //{
+                //    cmdText = "SELECT user_id, username, first_name, last_name FROM friends " +
+                //              "INNER JOIN users ON friends.primary_user_id = users.user_id " +
+                //              "WHERE((primary_user_id = @user_id AND accepted = 1) OR (secondary_user_id = @user_id AND accepted = 1))";
+
+                //    SqlCommand cmd = new SqlCommand(cmdText, con);
+                //    cmd.Parameters.AddWithValue("@user_id", user_id);
+
+                //    con.Open();
+                //    SqlDataReader rdr = cmd.ExecuteReader();
+                //    while (rdr.Read())
+                //    {
+                //        UserLayer.User user = new UserLayer.User()
+                //        {
+                //            user_id = Convert.ToInt32(rdr["user_id"]),
+                //            username = rdr["username"].ToString(),
+                //            first_name = rdr["first_name"].ToString(),
+                //            last_name = rdr["last_name"].ToString()
+                //        };
+                //        if (!dictFriends.ContainsKey(user.user_id))
+                //        {
+                //            dictFriends.Add(user.user_id,user);
+                //        }
+                //    }
+                //}
+
+                //// get friends where secondary user id = userid
+                //using (SqlConnection con = new SqlConnection(connString))
+                //{
+                //    cmdText = "SELECT user_id, username, first_name, last_name FROM friends " +
+                //              "INNER JOIN users ON friends.secondary_user_id = users.user_id " +
+                //              "WHERE((primary_user_id = @user_id AND accepted = 1) OR (secondary_user_id = @user_id AND accepted = 1))";
+
+                //    SqlCommand cmd = new SqlCommand(cmdText, con);
+                //    cmd.Parameters.AddWithValue("@user_id", user_id);
+
+                //    con.Open();
+                //    SqlDataReader rdr = cmd.ExecuteReader();
+                //    while (rdr.Read())
+                //    {
+                //        UserLayer.User user = new UserLayer.User()
+                //        {
+                //            user_id = Convert.ToInt32(rdr["user_id"]),
+                //            username = rdr["username"].ToString(),
+                //            first_name = rdr["first_name"].ToString(),
+                //            last_name = rdr["last_name"].ToString()
+                //        };
+
+                //        if (!dictFriends.ContainsKey(user.user_id))
+                //        {
+                //            dictFriends.Add(user.user_id, user);
+                //        }
+                //    }
+                //}
+
+
             }
 
             public static List<UserLayer.User> GetFriendRequestsByUserID(int userID)
@@ -845,7 +1059,7 @@ namespace RecipeLibrary
                 using (SqlConnection con = new SqlConnection(connString))
                 {
                     cmdText = "SELECT users.username, users.first_name, users.last_name, friends.primary_user_id FROM users " +
-                              "INNER JOIN friends ON users.user_id = friends.primary_user_id WHERE(friends.secondary_user_id = @userId)";
+                              "INNER JOIN friends ON users.user_id = friends.primary_user_id WHERE(friends.secondary_user_id = @userId AND accepted = 0)";
 
                     SqlCommand cmd = new SqlCommand(cmdText, con);
                     cmd.Parameters.AddWithValue("@userID", userID);
@@ -880,6 +1094,26 @@ namespace RecipeLibrary
 
                     con.Open();
                     cmd.ExecuteNonQuery();
+                }
+            }
+
+            /// <summary>
+            /// Deletes the record that was originally created when the request was made
+            /// </summary>
+            /// <param name="id1"></param>
+            /// <param name="id2"></param>
+            public static bool DeclineFriendRequest(int id1, int id2)
+            {
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    cmdText = "DELETE FROM friends WHERE (primary_user_id = @id1 AND secondary_user_id = @id2);";
+
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@id1", id1);
+                    cmd.Parameters.AddWithValue("@id2", id2);
+
+                    con.Open();
+                    return (cmd.ExecuteNonQuery() > 0) ? true : false;
                 }
             }
 
