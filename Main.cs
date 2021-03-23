@@ -488,6 +488,50 @@ namespace RecipeLibrary
 
             }
 
+            public class Instruction
+            {
+                public int InstructionID { get; set; }
+                public string Name { get; set; }
+            }
+
+            public static List<Instruction> GetInstructionsByRecipeID(int recipe_id)
+            {
+                List<Instruction> instructions = new List<Instruction>();
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    //cmdText = "SELECT ingredient.name, ingredient.measure_value, recipe_instruction.instruction, ingredient.ingredient_id, recipe_instruction.recipe_instruction_id " +
+                    //          "FROM ingredient RIGHT OUTER JOIN " +
+                    //          "recipe_instruction ON ingredient.ingredient_id = recipe_instruction.ingredient_id " +
+                    //          "WHERE(recipe_instruction.recipe_id = @recipe_id)";
+
+                    cmdText = "SELECT recipe_instruction_id, instruction " +
+                              "FROM recipe_instruction " +
+                              "WHERE(recipe_id = @recipe_id)";
+
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@recipe_id", recipe_id);
+
+                    con.Open();
+
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    while (rdr.Read())
+                    {
+                        Instruction instruction = new Instruction()
+                        {
+                            InstructionID = Convert.ToInt32(rdr["recipe_instruction_id"]),
+                            //instruction_id = Convert.ToInt32(rdr["recipe_instruction_id"]),
+                            //instruction = rdr["instruction"].ToString(),
+                            //measure_value = rdr["measure_value"].ToString(),
+                            Name = rdr["instruction"].ToString()
+                           
+                        };
+
+                        instructions.Add(instruction);
+                    }
+                }
+                return instructions;
+            }
+
             public static List<Ingredient> GetIngredientsByRecipeID(int recipe_id)
             {
                 List<Ingredient> ingredients = new List<Ingredient>();
@@ -498,7 +542,7 @@ namespace RecipeLibrary
                     //          "recipe_instruction ON ingredient.ingredient_id = recipe_instruction.ingredient_id " +
                     //          "WHERE(recipe_instruction.recipe_id = @recipe_id)";
 
-                    cmdText = "SELECT ingredient_id, name, measure_value " +
+                    cmdText = "SELECT ingredient_id, name " +
                               "FROM ingredient " +
                               "WHERE(recipe_id = @recipe_id)";
 
@@ -528,7 +572,7 @@ namespace RecipeLibrary
 
             public static void InsertIngredients(int recipe_id, List<string> ingredients)
             {
-                foreach (var ingredient in ingredients)
+                foreach (string ingredient in ingredients)
                 {
                     // add ingredient to ingredient table 
                     cmdText = "INSERT ingredient (recipe_id,name) VALUES(@recipe_id, @name);";
@@ -598,6 +642,7 @@ namespace RecipeLibrary
                 return mealTypes;
             }
         }
+     
 
         public class RecipeLayer
         {
@@ -613,6 +658,26 @@ namespace RecipeLibrary
                 public List<string> Instructions { get; set; }
                 public List<string> Ingredients { get; set; }
 
+            }
+
+            public class RecipeView
+            {
+                public int recipe_id { get; set; }
+                public string name { get; set; }
+                public string description { get; set; }
+                public int? user_id { get; set; }
+                public DateTime created { get; set; }
+                public int meal_type_id { get; set; }
+                public string meal_type_name { get; set; }
+                public List<IngredientLayer.Instruction> Instructions { get; set; }
+                public List<IngredientLayer.Ingredient> Ingredients { get; set; }
+
+            }
+
+            public class RecipeIDUserID
+            {
+                public int UserID { get; set; }
+                public int RecipeID { get; set; }
             }
 
             public static int InsertRecipe(Recipe recipe)
@@ -742,10 +807,123 @@ namespace RecipeLibrary
                 return listRecipes;
             }
 
-            public static Recipe GetRecipeByRecipeID(int recipeID)
+
+            public static bool RecipeExistsByRecipeID(int recipeID)
             {
-                Recipe recipe = new Recipe();
+                cmdText = "SELECT count(*) AS count FROM recipe WHERE recipe_id = @recipeID";
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@recipeID", recipeID);
+                    con.Open();
+                    return (Convert.ToInt32(cmd.ExecuteScalar()) > 0) ? true : false;
+
+                }
+            }
+
+            public static List<RecipeView> SearchRecipesByTerm(int pageNumber, int pageSize, string searchVal) 
+            {
+                List<RecipeView> listRecipeViews = new List<RecipeView>();
+
+                // get main recipe info
+
+                //cmdText = "SELECT r.name AS recipeName, r.recipe_id, r.user_id, r.description, r.created, mt.name as mealType FROM recipe r " +
+                //          "INNER JOIN meal_type mt ON r.meal_type_id = mt.meal_type_id WHERE r.name LIKE @searchVal + '%'";
+
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand("spSearchRecipes", con);
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.AddWithValue("@PageNumber", pageNumber);
+                    cmd.Parameters.AddWithValue("@PageSize", pageSize);
+                    cmd.Parameters.AddWithValue("@SearchVal", searchVal);
+
+                    con.Open();
+
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    while (rdr.Read())
+                    {
+                        RecipeView recipe = new RecipeView();
+                        recipe.created = Convert.ToDateTime(rdr["created"]);
+                        recipe.name = rdr["recipeName"].ToString();
+                        recipe.meal_type_name = rdr["mealType"].ToString();
+                        recipe.description = rdr["description"].ToString();
+                        recipe.user_id = Convert.ToInt16(rdr["user_id"]);
+                        recipe.recipe_id = Convert.ToInt32(rdr["recipe_id"]);
+
+                        // get ingredients
+                        //recipe.Ingredients = IngredientLayer.GetIngredientsByRecipeID(recipe.recipe_id);
+
+                        // get instructions
+                        //recipe.Instructions = IngredientLayer.GetInstructionsByRecipeID(recipe.recipe_id);
+
+                        listRecipeViews.Add(recipe);
+                    }
+                }
+                return listRecipeViews;
+            }
+
+            public static RecipeView GetRecipeByRecipeID(int recipeID)
+            {
+                RecipeView recipe = new RecipeView();
+                
+                // get main recipe info
+                cmdText = "SELECT r.name AS recipeName, r.user_id, r.description, r.created, mt.name as mealType FROM recipe r " +
+                          "INNER JOIN meal_type mt ON r.meal_type_id = mt.meal_type_id WHERE r.recipe_id = @recipeID";
+
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@recipeID", recipeID);
+
+                    con.Open();
+                    SqlDataReader rdr = cmd.ExecuteReader();
+
+                    while (rdr.Read())
+                    {
+                        recipe.created = Convert.ToDateTime(rdr["created"]);
+                        recipe.name = rdr["recipeName"].ToString();
+                        recipe.meal_type_name = rdr["mealType"].ToString();
+                        recipe.description = rdr["description"].ToString();
+                        recipe.user_id = Convert.ToInt16(rdr["user_id"]);
+                    }
+                }
+
+                // get ingredients
+                recipe.Ingredients = IngredientLayer.GetIngredientsByRecipeID(recipeID);
+
+                // get instructions
+                recipe.Instructions = IngredientLayer.GetInstructionsByRecipeID(recipeID);
+
                 return recipe;
+            }
+
+            public static List<RecipeIDUserID> GetFriendsRecipeIDs(int userID)
+            {
+                List<RecipeIDUserID> listIDs = new List<RecipeIDUserID>();
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand("spGetFriendsRecipeIDs", con);
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.AddWithValue("@userID", userID);
+
+                    con.Open();
+
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    while (rdr.Read())
+                    {
+                        RecipeIDUserID id = new RecipeIDUserID()
+                        {
+                            RecipeID= Convert.ToInt32(rdr["recipe_id"]),
+                            UserID =Convert.ToInt32(rdr["user_id"])
+                        };
+                        listIDs.Add(id);
+                    }
+                }
+
+                return listIDs;
             }
 
             public static List<Recipe> GetFriendsRecipesByUserID(int pageNumber, int pageSize, int userID)
@@ -777,7 +955,7 @@ namespace RecipeLibrary
                             user_id = Convert.ToInt32(rdr["user_id"])
                         };
 
-                        dictRecipes.Add( recipe);
+                        dictRecipes.Add(recipe);
                     }
 
                 }
@@ -1118,6 +1296,8 @@ namespace RecipeLibrary
             }
 
         }
+        
     }
 
+    
 }

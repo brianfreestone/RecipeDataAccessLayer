@@ -1,0 +1,1 @@
+﻿SELECT count(*) AS count FROM recipe WHERE recipe_id = 1
