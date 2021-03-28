@@ -51,6 +51,46 @@ namespace RecipeLibrary
         -----------------------------------------------------------*/
 
 
+        public class CommentLayer
+        {
+            public class Comment
+            {
+                public int CommentID { get; set; }
+                public string CommentText { get; set; }
+                public DateTime CommentDate { get; set; }
+                public int UserID { get; set; }
+                public string UserFullName { get; set; }
+            }
+
+            public static List<Comment> GetComments(int recipeID)
+            {
+                List<Comment> comments = new List<Comment>();
+                cmdText = "SELECT comment, comment_date, comments.user_id, first_name + ' ' + last_name AS FullName FROM comments INNER JOIN users ON comments.user_id = users.user_id WHERE recipe_id = @recipeID";
+
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@recipeID", recipeID);
+
+                    con.Open();
+                    SqlDataReader rdr = cmd.ExecuteReader();
+
+                    while (rdr.Read())
+                    {
+                        Comment comment = new Comment()
+                        {
+                            //CommentID = Convert.ToInt32(rdr["Comm"])
+                            CommentText = rdr["comment"].ToString(),
+                            CommentDate = Convert.ToDateTime(rdr["comment_date"]),
+                            UserID = Convert.ToInt32(rdr["user_id"]),
+                            UserFullName = rdr["FullName"].ToString()
+                        };
+                        comments.Add(comment);
+                    };
+                    return comments;
+                }
+            }
+        }
 
         /// <summary>
         /// User Layer for User Class and methods
@@ -222,6 +262,19 @@ namespace RecipeLibrary
                 return listUsers;
             }
 
+            public static string GetUsernameByUserID(int userID)
+            {
+                cmdText = "SELECT username FROM users WHERE user_id = @userID";
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@userID", userID);
+
+                    con.Open();
+                    return cmd.ExecuteScalar().ToString();
+                }
+            }
+
             public static User GetUserByEmailAndPassword(string email, string passwordHash)
             {
                 User user = new User();
@@ -312,30 +365,26 @@ namespace RecipeLibrary
 
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    // TODO create sql statement
-                    cmdText = "";
+                   
+                    cmdText = "SELECT user_id, username, first_name, last_name, is_admin FROM users WHERE email = @email";
 
-                    using (SqlCommand cmd = new SqlCommand())
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@email", email);
+
+                    con.Open();
+                    SqlDataReader rdr = cmd.ExecuteReader();
+
+                    while (rdr.Read())
                     {
-                        cmd.CommandText = cmdText;
-                        cmd.Parameters.AddWithValue("@email", user.email);
-
-                        con.Open();
-                        using (SqlDataReader rdr = cmd.ExecuteReader())
-                        {
-                            while (rdr.Read())
-                            {
-                                user.user_id = Convert.ToInt32(rdr["user_id"]);
-                                user.username = rdr["username"].ToString();
-                                user.email = rdr["email"].ToString();
-                                user.first_name = rdr["first_name"].ToString();
-                                user.last_name = rdr["last_name"].ToString();
-                                user.is_admin = Convert.ToBoolean(rdr["is_admin"]);
-                            }
-                        }
+                        user.user_id = Convert.ToInt32(rdr["user_id"]);
+                        user.username = rdr["username"].ToString();
+                        user.email = email;
+                        user.first_name = rdr["first_name"].ToString();
+                        user.last_name = rdr["last_name"].ToString();
+                        user.is_admin = Convert.ToBoolean(rdr["is_admin"]);
                     }
-                }
 
+                }
                 return user;
             }
 
@@ -523,7 +572,7 @@ namespace RecipeLibrary
                             //instruction = rdr["instruction"].ToString(),
                             //measure_value = rdr["measure_value"].ToString(),
                             Name = rdr["instruction"].ToString()
-                           
+
                         };
 
                         instructions.Add(instruction);
@@ -642,7 +691,7 @@ namespace RecipeLibrary
                 return mealTypes;
             }
         }
-     
+
 
         public class RecipeLayer
         {
@@ -821,7 +870,7 @@ namespace RecipeLibrary
                 }
             }
 
-            public static List<RecipeView> SearchRecipesByTerm(int pageNumber, int pageSize, string searchVal) 
+            public static List<RecipeView> SearchRecipesByTerm(int pageNumber, int pageSize, string searchVal)
             {
                 List<RecipeView> listRecipeViews = new List<RecipeView>();
 
@@ -867,7 +916,7 @@ namespace RecipeLibrary
             public static RecipeView GetRecipeByRecipeID(int recipeID)
             {
                 RecipeView recipe = new RecipeView();
-                
+
                 // get main recipe info
                 cmdText = "SELECT r.name AS recipeName, r.user_id, r.description, r.created, mt.name as mealType FROM recipe r " +
                           "INNER JOIN meal_type mt ON r.meal_type_id = mt.meal_type_id WHERE r.recipe_id = @recipeID";
@@ -916,8 +965,8 @@ namespace RecipeLibrary
                     {
                         RecipeIDUserID id = new RecipeIDUserID()
                         {
-                            RecipeID= Convert.ToInt32(rdr["recipe_id"]),
-                            UserID =Convert.ToInt32(rdr["user_id"])
+                            RecipeID = Convert.ToInt32(rdr["recipe_id"]),
+                            UserID = Convert.ToInt32(rdr["user_id"])
                         };
                         listIDs.Add(id);
                     }
@@ -1296,8 +1345,8 @@ namespace RecipeLibrary
             }
 
         }
-        
+
     }
 
-    
+
 }
