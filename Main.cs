@@ -53,6 +53,8 @@ namespace RecipeLibrary
 
         public class CommentLayer
         {
+
+
             public class Comment
             {
                 public int CommentID { get; set; }
@@ -60,12 +62,29 @@ namespace RecipeLibrary
                 public DateTime CommentDate { get; set; }
                 public int UserID { get; set; }
                 public string UserFullName { get; set; }
+                public string Username { get; set; }
+            }
+
+            public static void AddComment(int recipeID, int userID, string comment)
+            {
+                cmdText = "INSERT comments VALUES(@comment_date, @comment, @recipe_id, @user_id)";
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@comment_date",DateTime.Now);
+                    cmd.Parameters.AddWithValue("@comment", comment);
+                    cmd.Parameters.AddWithValue("@recipe_id", recipeID);
+                    cmd.Parameters.AddWithValue("@user_id", userID);
+                    con.Open();
+
+                    cmd.ExecuteNonQuery();
+                }
             }
 
             public static List<Comment> GetComments(int recipeID)
             {
                 List<Comment> comments = new List<Comment>();
-                cmdText = "SELECT comment, comment_date, comments.user_id, first_name + ' ' + last_name AS FullName FROM comments INNER JOIN users ON comments.user_id = users.user_id WHERE recipe_id = @recipeID";
+                cmdText = "SELECT comment, comment_date, comments.user_id, first_name + ' ' + last_name AS FullName, username FROM comments INNER JOIN users ON comments.user_id = users.user_id WHERE recipe_id = @recipeID ORDER BY comment_date DESC";
 
                 using (SqlConnection con = new SqlConnection(connString))
                 {
@@ -83,7 +102,8 @@ namespace RecipeLibrary
                             CommentText = rdr["comment"].ToString(),
                             CommentDate = Convert.ToDateTime(rdr["comment_date"]),
                             UserID = Convert.ToInt32(rdr["user_id"]),
-                            UserFullName = rdr["FullName"].ToString()
+                            UserFullName = rdr["FullName"].ToString(),
+                            Username = rdr["username"].ToString()
                         };
                         comments.Add(comment);
                     };
@@ -982,7 +1002,7 @@ namespace RecipeLibrary
 
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    SqlCommand cmd = new SqlCommand("spGetFriendsRecipes", con);
+                    SqlCommand cmd = new SqlCommand("spGetFriendsRecipesByID", con);
                     cmd.CommandType = CommandType.StoredProcedure;
 
                     cmd.Parameters.AddWithValue("@PageNumber", pageNumber);
