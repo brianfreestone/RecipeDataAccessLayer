@@ -112,6 +112,55 @@ namespace RecipeLibrary
             }
         }
 
+
+        //Ratings
+        public class RatingsLayer
+        {
+            public class Rating
+            {
+                int ratings_id { get; set; }
+                int user_id { get; set; }
+                int recipe_id { get; set; }
+                float rating { get; set; }
+
+
+            }
+
+            public static void InsertRating(int user_id, int recipe_id, float rating)
+            {
+                cmdText = "INSERT into RATINGS (user_id, recipe_id, rating) VALUES (@user_id, @recipe_id, @rating)";
+                using (SqlConnection CON = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, CON);
+                    cmd.Parameters.AddWithValue("@user_id", user_id);
+                    cmd.Parameters.AddWithValue("@recipe_id", recipe_id);
+                    cmd.Parameters.AddWithValue("@rating", rating);
+                    CON.Open();
+                    cmd.ExecuteNonQuery();
+
+                }
+            }
+
+            public static double GetRating(int recipe_id)
+            {
+                double rating = 0;
+                cmdText = "SELECT cast(round(avg(rating), 0) as FLOAT) as starrating FROM ratings WHERE (recipe_id = @recipe_id) group by recipe_id";
+                using (SqlConnection CON = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, CON);
+                    cmd.Parameters.AddWithValue("@recipe_id", recipe_id);
+                    CON.Open();
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    while (rdr.Read())
+                    {
+                        rating = (double)(rdr["starrating"]);
+                    }
+                    
+                }
+                return rating;
+            }
+        }
+
         /// <summary>
         /// User Layer for User Class and methods
         /// </summary>
@@ -132,6 +181,7 @@ namespace RecipeLibrary
 
                 // used for administrator functions
                 public bool is_admin { get; set; }
+                public bool is_active { get; set; }
             }
 
             /// <summary>
@@ -154,6 +204,7 @@ namespace RecipeLibrary
                     cmd.Parameters.AddWithValue("@first_name", user.first_name);
                     cmd.Parameters.AddWithValue("@last_name", user.last_name);
                     cmd.Parameters.AddWithValue("@is_admin", 0);
+                    cmd.Parameters.AddWithValue("@deactivated", 0);
                     cmd.Parameters.AddWithValue("@password", user.password);
 
                     cmd.Parameters.Add("@user_id", System.Data.SqlDbType.Int).Direction = System.Data.ParameterDirection.Output;
@@ -271,7 +322,17 @@ namespace RecipeLibrary
 
             public static void DeleteUser(int userID)
             {
+                cmdText = "UPDATE users SET is_active = 0 WHERE user_id = @userID";
 
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@userID", userID);
+
+                    con.Open();
+
+                    cmd.ExecuteNonQuery();
+                }
             }
 
             public static List<User> GetUsers()
@@ -279,6 +340,28 @@ namespace RecipeLibrary
                 // TODO Get list of all users
 
                 List<User> listUsers = new List<User>();
+
+                cmdText = "SELECT user_id, username, first_name, last_name, is_active FROM users";
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    con.Open();
+
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    while (rdr.Read())
+                    {
+                        User user = new User()
+                        {
+                            user_id = Convert.ToInt32(rdr["user_id"]),
+                            username = rdr["username"].ToString(),
+                            first_name = rdr["first_name"].ToString(),
+                            last_name = rdr["last_name"].ToString(),
+                            is_active = Convert.ToBoolean(rdr["is_active"])
+                        };
+                        listUsers.Add(user);
+                    }
+                }
+
                 return listUsers;
             }
 
@@ -836,6 +919,7 @@ namespace RecipeLibrary
 
             }
 
+            
             public static List<Recipe> GetRecipesByUserID(int user_id)
             {
                 List<Recipe> listRecipes = new List<Recipe>();
@@ -848,6 +932,44 @@ namespace RecipeLibrary
 
                     SqlCommand cmd = new SqlCommand(cmdText, con);
                     cmd.Parameters.AddWithValue("@user_id", user_id);
+
+                    con.Open();
+
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    while (rdr.Read())
+                    {
+                        Recipe recipe = new Recipe();
+                        recipe.recipe_id = Convert.ToInt32(rdr["recipe_id"]);
+                        recipe.description = rdr["description"].ToString();
+                        recipe.meal_type_id = Convert.ToInt32(rdr["mealID"]);
+                        recipe.meal_type_name = rdr["meal_type_name"].ToString();
+                        recipe.name = rdr["recipe_name"].ToString();
+                        recipe.created = Convert.ToDateTime(rdr["created"]);
+                        recipe.user_id = user_id;
+
+                        listRecipes.Add(recipe);
+                    }
+                }
+
+                return listRecipes;
+            }
+
+            public static List<Recipe> GetFavoriteRecipesByUserID(int user_id)
+            {
+                List<Recipe> listRecipes = new List<Recipe>();
+
+                using (SqlConnection con = new SqlConnection(connString))
+                {
+                    cmdText = "SELECT r.recipe_id, r.created, m.name AS 'meal_type_name', r.description, m.meal_type_id AS mealID, r.name AS 'recipe_name' " +
+                              "FROM recipe AS r INNER JOIN " +
+                              "meal_type AS m ON r.meal_type_id = m.meal_type_id " +
+                              "WHERE(r.recipe_id IN " +
+                              "(SELECT recipe_id " +
+                              "FROM favorite_recipe " +
+                              "WHERE(user_id = @userID)))";
+
+                    SqlCommand cmd = new SqlCommand(cmdText, con);
+                    cmd.Parameters.AddWithValue("@userID", user_id);
 
                     con.Open();
 
